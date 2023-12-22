@@ -1,0 +1,140 @@
+import sys
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QAction, QFileDialog, QPlainTextEdit, QDockWidget, QTextBrowser, QMenuBar, QStatusBar, QLabel, QToolBar, QWidget
+from PyQt5.QtGui import QKeySequence, QIcon
+from PyQt5.QtCore import Qt
+from PyQt5.Qsci import QsciScintilla, QsciLexerPython
+import code
+import asyncio
+
+
+class PythonIDE(QMainWindow):
+    def __init__(self):
+        super().__init__()
+
+        self.init_ui()
+
+    def init_ui(self):
+        # Central Widget - Code Editor
+        self.editor = QsciScintilla(self)
+        lexer = QsciLexerPython(self)
+        self.editor.setLexer(lexer)
+        self.setCentralWidget(self.editor)
+
+        # Interactive Console Dock
+        self.console_dock = QDockWidget('Interactive Console', self)
+        self.console_widget = QTextBrowser()
+        self.console_dock.setWidget(self.console_widget)
+        self.addDockWidget(Qt.BottomDockWidgetArea, self.console_dock)
+
+        # Menu Bar
+        menubar = self.menuBar()
+        file_menu = menubar.addMenu('File')
+
+        # Actions for File menu
+        new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file)
+        open_action = self.create_action('Open', 'Open File', 'Ctrl+O', self.open_file)
+        save_action = self.create_action('Save', 'Save File', 'Ctrl+S', self.save_file)
+        run_action = self.create_action('Run', 'Run Code', 'Ctrl+R', self.run_code)
+
+        # Add actions to the menu bar
+        file_menu.addActions([new_action, open_action, save_action, run_action])
+
+        # Toolbar
+        toolbar = QToolBar('Main Toolbar', self)
+        toolbar.addActions([new_action, open_action, save_action, run_action])
+        self.addToolBar(toolbar)
+
+        # Status Bar
+        status_bar = QStatusBar(self)
+        self.setStatusBar(status_bar)
+        self.status_label = QLabel('Ready', self)
+        status_bar.addWidget(self.status_label)
+
+        # Set up the main window
+        self.setGeometry(100, 100, 800, 600)
+        self.setWindowTitle('Python IDE')
+        self.setWindowIcon(QIcon('icon.png'))  # Replace 'icon.png' with the path to your icon
+
+        # File-related variables
+        self.current_file = ''
+
+    def create_action(self, name, tooltip, shortcut, callback):
+        action = QAction(name, self)
+        action.setToolTip(tooltip)
+        action.setShortcut(QKeySequence(shortcut))
+        action.triggered.connect(callback)
+        return action
+
+    def new_file(self):
+        self.editor.clear()
+        self.current_file = ''
+        self.update_status('New file created')
+
+    def open_file(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.ReadOnly
+
+        file_name, _ = QFileDialog.getOpenFileName(
+            self, "Open File", "", "Python Files (*.py);;All Files (*)", options=options
+        )
+
+        if file_name:
+            with open(file_name, 'r') as file:
+                content = file.read()
+                self.editor.setText(content)
+                self.current_file = file_name
+                self.update_status(f'Opened: {file_name}')
+
+    def save_file(self):
+        if not self.current_file:
+            self.current_file, _ = QFileDialog.getSaveFileName(
+                self, "Save File", "", "Python Files (*.py);;All Files (*)"
+            )
+
+        if self.current_file:
+            with open(self.current_file, 'w') as file:
+                file.write(self.editor.text())
+            self.update_status(f'Saved: {self.current_file}')
+
+    def run_code(self):
+        code_to_run = self.editor.text()
+        local_vars = {}
+        try:
+            # Capture standard output
+            import sys
+            from io import StringIO
+
+            original_stdout = sys.stdout
+            sys.stdout = StringIO()
+
+            # Execute the code
+            exec(code_to_run, globals(), local_vars)
+
+            # Retrieve the captured output
+            output = sys.stdout.getvalue()
+
+        except Exception as e:
+            output = f'Error: {str(e)}'
+        finally:
+            # Restore the original standard output
+            sys.stdout = original_stdout
+
+        # Display the output in the interactive console
+        self.console_widget.append(output)
+        self.update_status('Code executed')
+
+
+    def update_status(self, message):
+        self.status_label.setText(message)
+
+
+def main():
+    app = QApplication(sys.argv)
+    ide = PythonIDE()
+    ide.show()
+
+    # Start the Qt event loop
+    sys.exit(app.exec_())
+    
+if __name__ == '__main__':
+    main()
