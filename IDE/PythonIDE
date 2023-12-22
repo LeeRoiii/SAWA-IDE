@@ -2,13 +2,15 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QTabBar, QHBoxLayout, QWidget, QToolButton,
-    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar
+    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,
+    QVBoxLayout, QSplitter
 )
 from PyQt5.QtCore import Qt
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
-from PyQt5.QtGui import QKeySequence, QFont, QIcon
+from PyQt5.QtGui import QKeySequence, QFont, QColor
 from qtawesome import icon
-import qdarkstyle  # Import QDarkStyle
+
+icon_color = '#007ACC'
 
 class PythonIDE(QMainWindow):
     def __init__(self):
@@ -17,34 +19,117 @@ class PythonIDE(QMainWindow):
         # Set the attribute before creating the QApplication instance
         QApplication.setAttribute(Qt.AA_UseSoftwareOpenGL)
 
+        # Extracted colors from the provided palette
+        background_color = QColor(240, 240, 240)  # Light background
+        accent_color = QColor(86, 156, 214)  # Blue accent color
+        text_color = QColor(0, 0, 0)  # Black text
+        highlight_color = QColor(255, 255, 0)  # Yellow highlight color
+
+        # Set up stylesheets with the color palette
+        self.setStyleSheet(f"""
+            QMainWindow {{
+                background-color: {background_color.name()};
+                color: {text_color.name()};
+            }}
+
+            QTabBar::tab {{
+                background-color: {background_color.name()};
+                border: 2px solid {accent_color.name()};
+                border-radius: 0px;
+                color: {text_color.name()};
+                padding: 8px;
+                margin-right: 0px;
+                font-size: 14px;
+            }}
+
+            QTabBar::tab:selected {{
+                background-color: {accent_color.name()};
+            }}
+
+            QToolBar {{
+                background-color: {background_color.name()};
+                border: 1px solid {accent_color.name()};
+                spacing: 8px;
+            }}
+
+            QToolBar QToolButton {{
+                background-color: {background_color.name()};
+                border: 1px solid {accent_color.name()};
+                color: {text_color.name()};
+                padding: 6px;
+            }}
+
+            QToolBar QToolButton:hover {{
+                background-color: {highlight_color.name()};
+            }}
+
+            QStatusBar {{
+                background-color: {background_color.name()};
+                color: {text_color.name()};
+            }}
+
+            QLineEdit {{
+                background-color: {background_color.name()};
+                border: 1px solid {accent_color.name()};
+                color: {text_color.name()};
+                padding: 10px;
+            }}
+
+            QDockWidget {{
+                background-color: {background_color.name()};
+                border: 2px solid {accent_color.name()};
+            }}
+
+            QTextBrowser {{
+                background-color: {background_color.name()};
+                border: 1px solid {accent_color.name()};
+                color: {text_color.name()};
+                padding: 10px;
+            }}
+        """)
+
+        # Initialize the UI
         self.init_ui()
 
     def init_ui(self):
-        # Central Widget - Tab Widget
-        self.setStyleSheet(qdarkstyle.load_stylesheet_pyqt5())
+        # Central Widget - Tab Widget and Console
+        central_widget = QWidget(self)
+        layout = QVBoxLayout(central_widget)
+
+        # Splitter for Editor and Console
+        splitter = QSplitter(Qt.Vertical)
+
+        # Tab Widget
         self.tab_widget = QTabWidget(self)
-        self.setCentralWidget(self.tab_widget)
         self.tab_widget.tabBar().setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.close_tab)
-
-        # Create an initial tab with the editor
         self.add_new_tab()
 
-        # Interactive Console Dock
+        # Console Dock
         self.console_dock = QDockWidget('Interactive Console', self)
         self.console_widget = QTextBrowser()
         self.console_dock.setWidget(self.console_widget)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.console_dock)
+
+        # Add widgets to layout
+        splitter.addWidget(self.tab_widget)
+        splitter.addWidget(self.console_dock)
+
+        # Add splitter to the main layout
+        layout.addWidget(splitter)
+
+        # Set the central widget
+        self.setCentralWidget(central_widget)
 
         # Menu Bar
         menubar = self.menuBar()
 
         # File Menu
         file_menu = menubar.addMenu('File')
-        new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file, 'plus')
+        new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file, 'file')
         open_action = self.create_action('Open', 'Open File', 'Ctrl+O', self.open_file, 'folder-open')
         save_action = self.create_action('Save', 'Save File', 'Ctrl+S', self.save_file, 'save')
-        exit_action = self.create_action('Exit', 'Exit IDE', 'Ctrl+Q', self.close, 'times')
+        exit_action = self.create_action('Exit', 'Exit IDE', 'Ctrl+Q', self.close, 'window-close')
         file_menu.addActions([new_action, open_action, save_action, exit_action])
 
         # Run Menu
@@ -59,7 +144,14 @@ class PythonIDE(QMainWindow):
 
         # Toolbar
         toolbar = QToolBar('Main Toolbar', self)
+        toolbar_icon_size = 20
         toolbar.addActions([new_action, open_action, save_action, run_code_action])
+
+        # Change the color of the icons
+        for action in toolbar.actions():
+            icon_name = action.property('icon_name')
+            action.setIcon(icon(f'fa5s.{icon_name}', color=icon_color, color_active='#87CEFA', scale_factor=1.5))
+
         self.addToolBar(toolbar)
 
         # Status Bar
@@ -67,9 +159,19 @@ class PythonIDE(QMainWindow):
         self.status_label = QLabel('Ready', self)
         status_bar.addWidget(self.status_label)
 
+        # Example implementation of a search bar
+        self.search_bar = QLineEdit(self)
+        self.search_bar.setPlaceholderText('Search...')
+        toolbar.addWidget(self.search_bar)
+
+        # Example implementation of a retractable sidebar
+        self.sidebar = QDockWidget('Sidebar', self)
+        self.sidebar.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar)
+
         # Set up the main window
-        self.setGeometry(100, 100, 800, 600)
-        self.setWindowTitle('Python IDE')
+        self.setGeometry(100, 100, 1200, 800)
+        self.setWindowTitle('sawa IDE')
         self.show()
 
         # File-related variables
@@ -83,9 +185,8 @@ class PythonIDE(QMainWindow):
 
         # Set up line numbers
         font = QFont()
-        font.setFamily('Courier')
-        font.setFixedPitch(True)
-        font.setPointSize(10)
+        font.setFamily('Menlo')  # Use a monospaced font
+        font.setPointSize(12)
         editor.setMarginsFont(font)
         editor.setMarginWidth(0, '0000')
         editor.setMarginLineNumbers(0, True)
@@ -116,16 +217,15 @@ class PythonIDE(QMainWindow):
 
         self.tab_widget.setCurrentIndex(index)
 
-
-
     def create_action(self, name, tooltip, shortcut, callback, icon_name):
         action = QAction(name, self)
         action.setToolTip(tooltip)
         action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(callback)
-        action.setIcon(icon('fa5s.' + icon_name))  # Use Font Awesome icons
+        action.setProperty('icon_name', icon_name)  # Set the icon_name property
+        action.setIcon(icon(f'fa5s.{icon_name}', color=icon_color, color_active='#87CEFA', scale_factor=1.5))
         return action
-    
+
     def new_file(self):
         # Create a new tab when a new file is requested
         self.add_new_tab()
@@ -162,8 +262,6 @@ class PythonIDE(QMainWindow):
                 # Handle other exceptions
                 self.show_error_dialog(f"Error opening file {file_path}: {str(e)}")
 
-
-
     def get_all_files_in_folder(self, folder_path):
         file_names = []
         for root, dirs, files in os.walk(folder_path):
@@ -171,7 +269,11 @@ class PythonIDE(QMainWindow):
                 file_names.append(os.path.join(root, file_name))
         return file_names
 
-
+    def toggle_sidebar(self):
+        if self.sidebar.isHidden():
+            self.sidebar.show()
+        else:
+            self.sidebar.hide()
 
     def save_file(self):
         if not self.current_file:
@@ -182,13 +284,14 @@ class PythonIDE(QMainWindow):
             )
 
         if self.current_file:
+            current_editor = self.tab_widget.currentWidget()  # Get the active tab's editor
             with open(self.current_file, 'w') as file:
-                file.write(self.editor.text())
+                file.write(current_editor.text())  # Use current_editor.text() instead of self.editor.text()
+
             self.update_status(f'Saved: {self.current_file}')
 
             # Provide feedback to the user
             QMessageBox.information(self, 'File Saved', f'File saved successfully: {self.current_file}')
-
 
     def run_code(self):
         # Get the active tab's editor
