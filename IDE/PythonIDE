@@ -1,24 +1,34 @@
 import sys
-from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QAction, QFileDialog, QPlainTextEdit, QDockWidget, QTextBrowser, QMenuBar, QStatusBar, QLabel, QToolBar, QWidget
-from PyQt5.QtGui import QKeySequence, QIcon
+import os
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QMessageBox, QTabBar, QHBoxLayout, QWidget, QToolButton,
+    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar
+)
 from PyQt5.QtCore import Qt
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
-import code
-import asyncio
-
+from PyQt5.QtGui import QKeySequence, QFont, QIcon
+from qtawesome import icon
+import qdarkstyle  # Import QDarkStyle
 
 class PythonIDE(QMainWindow):
     def __init__(self):
         super().__init__()
 
+        # Set the attribute before creating the QApplication instance
+        QApplication.setAttribute(Qt.AA_UseSoftwareOpenGL)
+
         self.init_ui()
 
     def init_ui(self):
-        # Central Widget - Code Editor
-        self.editor = QsciScintilla(self)
-        lexer = QsciLexerPython(self)
-        self.editor.setLexer(lexer)
-        self.setCentralWidget(self.editor)
+        # Central Widget - Tab Widget
+        self.setStyleSheet(qdarkstyle.load_stylesheet_pyqt5())
+        self.tab_widget = QTabWidget(self)
+        self.setCentralWidget(self.tab_widget)
+        self.tab_widget.tabBar().setTabsClosable(True)
+        self.tab_widget.tabCloseRequested.connect(self.close_tab)
+
+        # Create an initial tab with the editor
+        self.add_new_tab()
 
         # Interactive Console Dock
         self.console_dock = QDockWidget('Interactive Console', self)
@@ -28,67 +38,147 @@ class PythonIDE(QMainWindow):
 
         # Menu Bar
         menubar = self.menuBar()
+
+        # File Menu
         file_menu = menubar.addMenu('File')
+        new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file, 'plus')
+        open_action = self.create_action('Open', 'Open File', 'Ctrl+O', self.open_file, 'folder-open')
+        save_action = self.create_action('Save', 'Save File', 'Ctrl+S', self.save_file, 'save')
+        exit_action = self.create_action('Exit', 'Exit IDE', 'Ctrl+Q', self.close, 'times')
+        file_menu.addActions([new_action, open_action, save_action, exit_action])
 
-        # Actions for File menu
-        new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file)
-        open_action = self.create_action('Open', 'Open File', 'Ctrl+O', self.open_file)
-        save_action = self.create_action('Save', 'Save File', 'Ctrl+S', self.save_file)
-        run_action = self.create_action('Run', 'Run Code', 'Ctrl+R', self.run_code)
+        # Run Menu
+        run_menu = menubar.addMenu('Run')
+        run_code_action = self.create_action('Run Code', 'Run Code', 'Ctrl+R', self.run_code, 'play')
+        run_menu.addAction(run_code_action)
 
-        # Add actions to the menu bar
-        file_menu.addActions([new_action, open_action, save_action, run_action])
+        # View Menu
+        view_menu = menubar.addMenu('View')
+        toggle_console_action = self.console_dock.toggleViewAction()
+        view_menu.addAction(toggle_console_action)
 
         # Toolbar
         toolbar = QToolBar('Main Toolbar', self)
-        toolbar.addActions([new_action, open_action, save_action, run_action])
+        toolbar.addActions([new_action, open_action, save_action, run_code_action])
         self.addToolBar(toolbar)
 
         # Status Bar
-        status_bar = QStatusBar(self)
-        self.setStatusBar(status_bar)
+        status_bar = self.statusBar()
         self.status_label = QLabel('Ready', self)
         status_bar.addWidget(self.status_label)
 
         # Set up the main window
         self.setGeometry(100, 100, 800, 600)
         self.setWindowTitle('Python IDE')
-        self.setWindowIcon(QIcon('icon.png'))  # Replace 'icon.png' with the path to your icon
+        self.show()
 
         # File-related variables
         self.current_file = ''
 
-    def create_action(self, name, tooltip, shortcut, callback):
+    def add_new_tab(self):
+        # Create a new tab with an editor
+        editor = QsciScintilla(self)
+        lexer = QsciLexerPython(self)
+        editor.setLexer(lexer)
+
+        # Set up line numbers
+        font = QFont()
+        font.setFamily('Courier')
+        font.setFixedPitch(True)
+        font.setPointSize(10)
+        editor.setMarginsFont(font)
+        editor.setMarginWidth(0, '0000')
+        editor.setMarginLineNumbers(0, True)
+
+        # Enable undo functionality using QsciCommand
+        editor.SendScintilla(QsciScintilla.SCI_SETUNDOCOLLECTION, 1)
+
+        # Add the editor to the tab widget
+        index = self.tab_widget.addTab(editor, 'Untitled')
+
+        # Add a close button to the tab
+        close_button = QToolButton()
+        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
+        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+
+        # Set up a layout for the tab title and close button
+        tab_layout = QHBoxLayout()
+        tab_layout.addWidget(QLabel('Untitled'))
+        tab_layout.addWidget(close_button)
+        tab_layout.setSpacing(2)  # Adjust spacing as needed
+
+        # Set the custom layout for the tab
+        tab_widget = QWidget()
+        tab_widget.setLayout(tab_layout)
+        self.tab_widget.setTabText(index, '')
+        self.tab_widget.setTabToolTip(index, 'Untitled')
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)  # Corrected line
+
+        self.tab_widget.setCurrentIndex(index)
+
+
+
+    def create_action(self, name, tooltip, shortcut, callback, icon_name):
         action = QAction(name, self)
         action.setToolTip(tooltip)
         action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(callback)
+        action.setIcon(icon('fa5s.' + icon_name))  # Use Font Awesome icons
         return action
-
+    
     def new_file(self):
-        self.editor.clear()
-        self.current_file = ''
+        # Create a new tab when a new file is requested
+        self.add_new_tab()
         self.update_status('New file created')
 
     def open_file(self):
         options = QFileDialog.Options()
         options |= QFileDialog.ReadOnly
 
-        file_name, _ = QFileDialog.getOpenFileName(
-            self, "Open File", "", "Python Files (*.py);;All Files (*)", options=options
+        # Get the path of the selected file
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Open File", "", "Python Files (*.py);;Text Files (*.txt);;All Files (*)",
+            options=options
         )
 
-        if file_name:
-            with open(file_name, 'r') as file:
-                content = file.read()
-                self.editor.setText(content)
-                self.current_file = file_name
-                self.update_status(f'Opened: {file_name}')
+        if file_path:
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    content = file.read()
+
+                    # Create a new tab for the opened file
+                    self.add_new_tab()
+                    # Get the current editor in the active tab
+                    editor = self.tab_widget.currentWidget()
+                    editor.setText(content)
+                    # Update the tab title with the file name
+                    self.tab_widget.setTabText(self.tab_widget.currentIndex(), os.path.basename(file_path))
+                    self.update_status(f'Opened: {file_path}')
+
+            except UnicodeDecodeError as e:
+                # Handle the case where the file cannot be decoded with the specified encoding
+                self.show_error_dialog(f"Error reading file {file_path}: {str(e)}")
+            except Exception as e:
+                # Handle other exceptions
+                self.show_error_dialog(f"Error opening file {file_path}: {str(e)}")
+
+
+
+    def get_all_files_in_folder(self, folder_path):
+        file_names = []
+        for root, dirs, files in os.walk(folder_path):
+            for file_name in files:
+                file_names.append(os.path.join(root, file_name))
+        return file_names
+
+
 
     def save_file(self):
         if not self.current_file:
+            # Define multiple file types for the file dialog
+            file_types = "Python Files (*.py);;Text Files (*.txt);;All Files (*)"
             self.current_file, _ = QFileDialog.getSaveFileName(
-                self, "Save File", "", "Python Files (*.py);;All Files (*)"
+                self, "Save File", "", file_types
             )
 
         if self.current_file:
@@ -96,45 +186,94 @@ class PythonIDE(QMainWindow):
                 file.write(self.editor.text())
             self.update_status(f'Saved: {self.current_file}')
 
+            # Provide feedback to the user
+            QMessageBox.information(self, 'File Saved', f'File saved successfully: {self.current_file}')
+
+
     def run_code(self):
-        code_to_run = self.editor.text()
-        local_vars = {}
-        try:
-            # Capture standard output
-            import sys
-            from io import StringIO
+        # Get the active tab's editor
+        current_editor = self.tab_widget.currentWidget()
 
-            original_stdout = sys.stdout
-            sys.stdout = StringIO()
+        if current_editor:
+            code_to_run = current_editor.text()
+            local_vars = {}
 
-            # Execute the code
-            exec(code_to_run, globals(), local_vars)
+            try:
+                # Capture standard output and error
+                import sys
+                from io import StringIO
 
-            # Retrieve the captured output
-            output = sys.stdout.getvalue()
+                original_stdout = sys.stdout
+                original_stderr = sys.stderr
+                sys.stdout = StringIO()
+                sys.stderr = StringIO()
 
-        except Exception as e:
-            output = f'Error: {str(e)}'
-        finally:
-            # Restore the original standard output
-            sys.stdout = original_stdout
+                # Execute the code
+                exec(code_to_run, globals(), local_vars)
 
-        # Display the output in the interactive console
-        self.console_widget.append(output)
-        self.update_status('Code executed')
+                # Retrieve the captured output and error
+                output = sys.stdout.getvalue()
+                error_output = sys.stderr.getvalue()
 
+                # Display the output in the interactive console
+                self.console_widget.append(output)
+
+                # Display errors in a separate dialog if there are any
+                if error_output:
+                    self.show_error_dialog(error_output)
+
+            except Exception as e:
+                # Display the exception message in a separate dialog
+                self.show_error_dialog(str(e))
+
+            finally:
+                # Restore the original standard output and error
+                sys.stdout = original_stdout
+                sys.stderr = original_stderr
+
+            self.update_status('Code executed')
 
     def update_status(self, message):
         self.status_label.setText(message)
 
+    def show_error_dialog(self, error_message):
+        error_dialog = QMessageBox(self)
+        error_dialog.setIcon(QMessageBox.Critical)
+        error_dialog.setWindowTitle('Code Execution Error')
+        error_dialog.setText('An error occurred during code execution:')
+        error_dialog.setDetailedText(error_message)
+        error_dialog.exec_()
+
+    def close_tab(self, index):
+        # Check if there are unsaved changes in the current tab
+        editor = self.tab_widget.widget(index)
+        if editor.isModified():
+            # Display a confirmation dialog
+            reply = QMessageBox.question(
+                self,
+                'Unsaved Changes',
+                'You have unsaved changes. Do you want to save before closing?',
+                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
+            )
+
+            if reply == QMessageBox.Yes:
+                # Save the file before closing
+                self.save_file()
+            elif reply == QMessageBox.Cancel:
+                # Cancel the tab closing
+                return
+
+        # Close the tab
+        self.tab_widget.removeTab(index)
 
 def main():
     app = QApplication(sys.argv)
-    ide = PythonIDE()
-    ide.show()
 
-    # Start the Qt event loop
+    # Set the attribute before creating the QApplication instance
+    app.setAttribute(Qt.AA_UseSoftwareOpenGL)
+
+    ide = PythonIDE()
     sys.exit(app.exec_())
-    
+
 if __name__ == '__main__':
     main()
