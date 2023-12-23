@@ -2,10 +2,10 @@ import sys
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QTabBar, QHBoxLayout, QWidget, QToolButton,
-    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,
+    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,QPushButton,QDialog,QTreeView,QFileSystemModel,QHeaderView,
     QVBoxLayout, QSplitter
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt,QDir
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 from PyQt5.QtGui import QKeySequence, QFont, QColor
 from qtawesome import icon
@@ -142,6 +142,14 @@ class PythonIDE(QMainWindow):
         toggle_console_action = self.console_dock.toggleViewAction()
         view_menu.addAction(toggle_console_action)
 
+        # Project Menu
+        project_menu = menubar.addMenu('Project')
+        new_project_action = self.create_action('New Project', 'Create a new project', 'Ctrl+Shift+N', self.new_project, 'folder')
+        open_project_action = self.create_action('Open Project', 'Open an existing project', 'Ctrl+Shift+O', self.open_project, 'folder-open')
+        save_project_action = self.create_action('Save Project', 'Save the current project', 'Ctrl+Shift+S', self.save_project, 'save')
+        project_menu.addActions([new_project_action, open_project_action, save_project_action])
+
+
         # Toolbar
         toolbar = QToolBar('Main Toolbar', self)
         toolbar_icon_size = 20
@@ -159,13 +167,13 @@ class PythonIDE(QMainWindow):
         self.status_label = QLabel('Ready', self)
         status_bar.addWidget(self.status_label)
 
-        # Example implementation of a search bar
-        self.search_bar = QLineEdit(self)
-        self.search_bar.setPlaceholderText('Search...')
-        toolbar.addWidget(self.search_bar)
+        # Create a button to open a new window
+        open_new_window_button = QPushButton('Open New Window', self)
+        open_new_window_button.clicked.connect(self.open_new_window)
+        toolbar.addWidget(open_new_window_button)
 
         # Example implementation of a retractable sidebar
-        self.sidebar = QDockWidget('Sidebar', self)
+        self.sidebar = QDockWidget('File Viewer', self)
         self.sidebar.setAllowedAreas(Qt.LeftDockWidgetArea | Qt.RightDockWidgetArea)
         self.addDockWidget(Qt.LeftDockWidgetArea, self.sidebar)
 
@@ -225,7 +233,18 @@ class PythonIDE(QMainWindow):
         action.setProperty('icon_name', icon_name)  # Set the icon_name property
         action.setIcon(icon(f'fa5s.{icon_name}', color=icon_color, color_active='#87CEFA', scale_factor=1.5))
         return action
+    
+    def open_new_window(self):
+        # Create a new window/dialog
+        new_window = QDialog(self)
+        new_window.setWindowTitle('New Window')
 
+        # Add widgets or other components to the new window as needed
+        new_window_layout = QVBoxLayout(new_window)
+        new_window_label = QLabel('This is a new window!')
+        new_window_layout.addWidget(new_window_label)
+
+        new_window.exec_()  # Show the new window
     def new_file(self):
         # Create a new tab when a new file is requested
         self.add_new_tab()
@@ -368,6 +387,91 @@ class PythonIDE(QMainWindow):
 
         # Close the tab
         self.tab_widget.removeTab(index)
+        
+    def new_window(self):
+        new_instance = PythonIDE()
+        new_instance.show()
+        
+    def new_project(self):
+        # Dialog to get the project directory
+        project_dir = QFileDialog.getExistingDirectory(self, 'Select Project Directory')
+        if project_dir:
+            # Implement logic to create a new project, set project-specific settings, etc.
+            self.update_status(f'New project created: {project_dir}')
+            # You may also update other UI elements or settings related to the project.
+
+    def open_project(self):
+        # Dialog to get the project directory
+        project_dir = QFileDialog.getExistingDirectory(self, 'Open Project')
+        if project_dir:
+            # Implement logic to open an existing project, load project-specific settings, etc.
+            self.update_status(f'Opened project: {project_dir}')
+
+            # Update the sidebar with the project explorer
+            self.update_project_explorer(project_dir)
+
+            # You may also update other UI elements or settings related to the project.
+
+    def save_project(self):
+        # Implement logic to save the current project
+        # This can include saving project-specific settings, ensuring project directory exists, etc.
+        self.update_status(f'Saved project')
+
+        # Provide feedback to the user
+        QMessageBox.information(self, 'Project Saved', 'Project saved successfully.')
+
+    def update_project_explorer(self, project_dir):
+        # Clear existing content in the sidebar
+        self.clear_sidebar()
+
+        # Create a QFileSystemModel
+        model = QFileSystemModel()
+        model.setRootPath(project_dir)
+
+        # Create a QTreeView for the project explorer
+        tree_view = QTreeView(self.sidebar)
+        tree_view.setHeaderHidden(True)
+        tree_view.setModel(model)
+        tree_view.setRootIndex(model.index(project_dir))
+
+        # Set column width to fit content
+        tree_view.header().setSectionResizeMode(QHeaderView.ResizeToContents)
+
+        # Set up sorting
+        tree_view.setSortingEnabled(True)
+
+        # Expand to the root
+        tree_view.expandToDepth(0)
+
+        # Connect double-click event to open_file method
+        tree_view.doubleClicked.connect(self.open_file_from_treeview)
+
+        # Add the tree view to the sidebar
+        self.sidebar.setWidget(tree_view)
+
+    def open_file_from_treeview(self, index):
+        # Get the file path from the selected index
+        file_path = self.sender().model().filePath(index)
+
+        # Perform logic to open the file (you can adapt this to your needs)
+        if os.path.isfile(file_path):
+            with open(file_path, 'r', encoding='utf-8') as file:
+                content = file.read()
+
+            # Create a new tab for the opened file
+            self.add_new_tab()
+            # Get the current editor in the active tab
+            editor = self.tab_widget.currentWidget()
+            editor.setText(content)
+            # Update the tab title with the file name
+            self.tab_widget.setTabText(self.tab_widget.currentIndex(), os.path.basename(file_path))
+            self.update_status(f'Opened: {file_path}')
+                    
+    def clear_sidebar(self):
+        # Clear the existing content in the sidebar
+        if self.sidebar.widget():
+            self.sidebar.widget().setParent(None)
+
 
 def main():
     app = QApplication(sys.argv)
@@ -376,6 +480,8 @@ def main():
     app.setAttribute(Qt.AA_UseSoftwareOpenGL)
 
     ide = PythonIDE()
+    ide.show()
+
     sys.exit(app.exec_())
 
 if __name__ == '__main__':
