@@ -1,14 +1,16 @@
 import sys
+#yawa
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QTabBar, QHBoxLayout, QWidget, QToolButton,
-    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,QPushButton,QDialog,QTreeView,QFileSystemModel,QHeaderView,
+    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,QInputDialog,QMenu,QPushButton,QDialog,QTreeView,QFileSystemModel,QHeaderView,
     QVBoxLayout, QSplitter
 )
 from PyQt5.QtCore import Qt,QDir
 from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 from PyQt5.QtGui import QKeySequence, QFont, QColor
 from qtawesome import icon
+import shutil
 
 icon_color = '#007ACC'
 
@@ -129,8 +131,7 @@ class PythonIDE(QMainWindow):
         new_action = self.create_action('New', 'New File', 'Ctrl+N', self.new_file, 'file')
         open_action = self.create_action('Open', 'Open File', 'Ctrl+O', self.open_file, 'folder-open')
         save_action = self.create_action('Save', 'Save File', 'Ctrl+S', self.save_file, 'save')
-        exit_action = self.create_action('Exit', 'Exit IDE', 'Ctrl+Q', self.close, 'window-close')
-        file_menu.addActions([new_action, open_action, save_action, exit_action])
+        file_menu.addActions([new_action, open_action, save_action])
 
         # Run Menu
         run_menu = menubar.addMenu('Run')
@@ -205,17 +206,24 @@ class PythonIDE(QMainWindow):
         # Add the editor to the tab widget
         index = self.tab_widget.addTab(editor, 'Untitled')
 
-        # Add a close button to the tab
         close_button = QToolButton()
         close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
         close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
 
         # Set up a layout for the tab title and close button
         tab_layout = QHBoxLayout()
-        tab_layout.addWidget(QLabel('Untitled'))
-        tab_layout.addWidget(close_button)
-        tab_layout.setSpacing(2)  # Adjust spacing as needed
+        tab_layout.addWidget(QLabel('Filename'))  # Replace 'Untitled' with the actual filename
+        tab_layout.addStretch(1)  # Add a stretchable space to push the close button to the right
 
+        # Create a minimal close button
+        close_button = QToolButton()
+        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
+        close_button.setStyleSheet("QToolButton { border: none; padding: 0; margin: 0; max-height: 10px; }")
+        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+
+        tab_layout.addWidget(close_button)
+        tab_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to make it a rectangle
+        tab_layout.setSpacing(4)  # Adjust spacing as needed
         # Set the custom layout for the tab
         tab_widget = QWidget()
         tab_widget.setLayout(tab_layout)
@@ -230,7 +238,7 @@ class PythonIDE(QMainWindow):
         action.setToolTip(tooltip)
         action.setShortcut(QKeySequence(shortcut))
         action.triggered.connect(callback)
-        action.setProperty('icon_name', icon_name)  # Set the icon_name property
+        action.setProperty('icon_name', icon_name)
         action.setIcon(icon(f'fa5s.{icon_name}', color=icon_color, color_active='#87CEFA', scale_factor=1.5))
         return action
     
@@ -245,6 +253,76 @@ class PythonIDE(QMainWindow):
         new_window_layout.addWidget(new_window_label)
 
         new_window.exec_()  # Show the new window
+
+    def setup_file_explorer_context_menu(self):
+        self.file_explorer_context_menu = QMenu(self)
+        self.rename_action = QAction('Rename', self)
+        self.rename_action.triggered.connect(self.rename_file_or_folder)
+        self.delete_action = QAction('Delete', self)
+        self.delete_action.triggered.connect(self.delete_file_or_folder)
+        self.file_explorer_context_menu.addActions([self.rename_action, self.delete_action])
+
+
+    def rename_file_or_folder(self):
+        selected_index = self.sidebar.widget().currentIndex()
+        file_path = self.sidebar.widget().model().filePath(selected_index)
+        new_name, ok = QInputDialog.getText(self, 'Rename', 'Enter a new name:', text=os.path.basename(file_path))
+
+        if ok and new_name:
+            new_path = os.path.join(os.path.dirname(file_path), new_name)
+            os.rename(file_path, new_path)
+            self.update_project_explorer(os.path.dirname(file_path))  # Refresh the file explorer
+
+    def dragEnterEvent(self, event):
+        event.acceptProposedAction()
+        self.setStatusTip('Drop files to move them')
+
+    def dropEvent(self, event):
+        files = [url.toLocalFile() for url in event.mimeData().urls()]
+
+        for file in files:
+            if os.path.exists(file):
+                shutil.move(file, os.path.join(os.path.dirname(self.current_file), os.path.basename(file)))
+
+        self.update_project_explorer(os.path.dirname(self.current_file))  # Refresh the file explorer
+        self.clearStatusTip()
+
+    def open_with_external_editor(self, file_path):
+        # Implement the logic to open the selected file with an external editor
+        # You can use subprocess to open the default system editor or a user-specified editor
+        pass
+
+    def delete_file_or_folder(self):
+        selected_index = self.sidebar.widget().currentIndex()
+        file_path = self.sidebar.widget().model().filePath(selected_index)
+
+        reply = QMessageBox.question(
+            self,
+            'Delete Confirmation',
+            f'Are you sure you want to delete {os.path.basename(file_path)}?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+            elif os.path.isdir(file_path):
+                os.rmdir(file_path)
+            self.update_project_explorer(os.path.dirname(file_path))
+
+    def dragEnterEvent(self, event):
+        event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        files = [url.toLocalFile() for url in event.mimeData().urls()]
+
+        for file in files:
+            if os.path.exists(file):
+                shutil.move(file, os.path.join(os.path.dirname(self.current_file), os.path.basename(file)))
+                
+        self.update_project_explorer(os.path.dirname(self.current_file))  # Refresh the file explorer
+
     def new_file(self):
         # Create a new tab when a new file is requested
         self.add_new_tab()
