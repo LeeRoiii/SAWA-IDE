@@ -1,9 +1,12 @@
 import sys
+import pyflakes.api
+import cProfile
+import traceback
 #yawa
 import os
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QMessageBox, QTabBar, QHBoxLayout, QWidget, QToolButton,
-    QTabWidget, QDockWidget, QTextBrowser, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,QInputDialog,QMenu,QPushButton,QDialog,QTreeView,QFileSystemModel,QHeaderView,
+    QTabWidget, QDockWidget, QTextBrowser,QSizePolicy, QFileDialog, QAction, QLabel, QToolBar, QLineEdit,QInputDialog,QMenu,QPushButton,QDialog,QTreeView,QFileSystemModel,QHeaderView,
     QVBoxLayout, QSplitter
 )
 from PyQt5.QtCore import Qt,QDir
@@ -11,6 +14,9 @@ from PyQt5.Qsci import QsciScintilla, QsciLexerPython
 from PyQt5.QtGui import QKeySequence, QFont, QColor
 from qtawesome import icon
 import shutil
+from pyflakes.api import check
+from io import StringIO
+from contextlib import contextmanager
 
 icon_color = '#007ACC'
 
@@ -105,7 +111,7 @@ class PythonIDE(QMainWindow):
         self.tab_widget = QTabWidget(self)
         self.tab_widget.tabBar().setTabsClosable(True)
         self.tab_widget.tabCloseRequested.connect(self.close_tab)
-        self.add_new_tab()
+        self.add_welcome_tab()
 
         # Console Dock
         self.console_dock = QDockWidget('Interactive Console', self)
@@ -145,11 +151,13 @@ class PythonIDE(QMainWindow):
 
         # Project Menu
         project_menu = menubar.addMenu('Project')
-        new_project_action = self.create_action('New Project', 'Create a new project', 'Ctrl+Shift+N', self.new_project, 'folder')
-        open_project_action = self.create_action('Open Project', 'Open an existing project', 'Ctrl+Shift+O', self.open_project, 'folder-open')
-        save_project_action = self.create_action('Save Project', 'Save the current project', 'Ctrl+Shift+S', self.save_project, 'save')
+        new_project_action = self.create_action('New Project', 'Create a new project', 'Ctrl+Shift+N',
+                                                self.new_project, 'folder')
+        open_project_action = self.create_action('Open Project', 'Open an existing project', 'Ctrl+Shift+O',
+                                                 self.open_project, 'folder-open')
+        save_project_action = self.create_action('Save Project', 'Save the current project', 'Ctrl+Shift+S',
+                                                 self.save_project, 'save')
         project_menu.addActions([new_project_action, open_project_action, save_project_action])
-
 
         # Toolbar
         toolbar = QToolBar('Main Toolbar', self)
@@ -186,7 +194,139 @@ class PythonIDE(QMainWindow):
         # File-related variables
         self.current_file = ''
 
-    def add_new_tab(self):
+ 
+    def add_new_tab(self, file_path=None):
+        # Create a new tab with an editor
+        editor = QsciScintilla(self)
+        lexer = QsciLexerPython(self)
+        editor.setLexer(lexer)
+
+        # Set up line numbers
+        font = QFont()
+        font.setFamily('Menlo')  # Use a monospaced font
+        font.setPointSize(8)
+        editor.setMarginsFont(font)
+        editor.setMarginWidth(0, '20')
+        editor.setMarginLineNumbers(0, True)
+
+        # Enable undo functionality using QsciCommand
+        editor.SendScintilla(QsciScintilla.SCI_SETUNDOCOLLECTION, 1)
+
+        # Add the editor to the tab widget
+        index = self.tab_widget.addTab(editor, '')
+
+        # Set up a layout for the tab title and close button
+        tab_layout = QHBoxLayout()
+
+        # Create a minimal close button
+        close_button = QToolButton()
+        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
+        close_button.setStyleSheet("QToolButton { border: none; padding: 0; margin: 0; max-height: 10px; }")
+        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+
+        if file_path:
+            # Show the actual file name
+            tab_layout.addWidget(QLabel(os.path.basename(file_path)))
+
+        tab_layout.addStretch(1)  # Add a stretchable space to push the close button to the right
+        tab_layout.addWidget(close_button)
+        tab_layout.setContentsMargins(0, 0, 5, 0)  # Remove margins to make it a rectangle
+        tab_layout.setSpacing(4)  # Adjust spacing as needed
+
+        # Set the custom layout for the tab
+        tab_widget = QWidget()
+        tab_widget.setLayout(tab_layout)
+        self.tab_widget.setTabText(index, '')
+        self.tab_widget.setTabToolTip(index, file_path if file_path else 'Untitled')
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)
+
+        # Make the tab resizable based on the length of the file name
+        size_policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        size_policy.setHorizontalStretch(1)  # Allow the widget to grow horizontally
+        tab_widget.setSizePolicy(size_policy)
+
+        # Set minimum and maximum sizes based on the length of the file name
+        min_width = 100  # Set a minimum width to ensure readability
+        max_width = 300  # Set a maximum width to avoid excessive stretching
+        tab_widget.setMinimumWidth(min_width)
+        tab_widget.setMaximumWidth(max_width)
+
+        self.tab_widget.setCurrentIndex(index)
+
+    def add_welcome_tab(self):
+        # Create a new tab with an editor
+        editor = QsciScintilla(self)
+        lexer = QsciLexerPython(self)
+        editor.setLexer(lexer)
+
+        # Set up line numbers
+        font = QFont()
+        font.setFamily('Menlo')  # Use a monospaced font
+        font.setPointSize(12)
+        editor.setMarginsFont(font)
+        editor.setMarginWidth(0, '0000')
+        editor.setMarginLineNumbers(0, True)
+
+        # Enable undo functionality using QsciCommand
+        editor.SendScintilla(QsciScintilla.SCI_SETUNDOCOLLECTION, 1)
+
+        # Add content to the welcome tab
+        welcome_content = """
+    print('Welcome to Your IDE!')
+    print('Feel free to start coding.')
+    """
+        editor.setText(welcome_content)
+
+        # Add the editor to the tab widget
+        index = self.tab_widget.addTab(editor, 'Welcome')
+
+        # Set up a layout for the tab title and buttons
+        tab_layout = QHBoxLayout()
+
+        # Create a minimal close button
+        close_button = QToolButton()
+        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
+        close_button.setStyleSheet("QToolButton { border: none; padding: 0; margin: 0; max-height: 10px; }")
+        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+
+        # Create a "Run" button
+        run_button = QToolButton()
+        run_button.setIcon(icon('fa5s.play'))  # Use Font Awesome icon for run
+        run_button.clicked.connect(lambda _, content=welcome_content: self.run_code_in_tab(content))
+
+        tab_layout.addWidget(QLabel('Welcome'))
+        tab_layout.addStretch(1)  # Add a stretchable space
+        tab_layout.addWidget(run_button)
+        tab_layout.addWidget(close_button)
+        tab_layout.setContentsMargins(0, 0, 5, 0)  # Remove margins to make it a rectangle
+        tab_layout.setSpacing(4)  # Adjust spacing as needed
+
+        # Set the custom layout for the tab
+        tab_widget = QWidget()
+        tab_widget.setLayout(tab_layout)
+        self.tab_widget.setTabText(index, '')
+        self.tab_widget.setTabToolTip(index, 'Welcome')
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)
+
+        # Make the tab resizable based on the length of the file name
+        size_policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        size_policy.setHorizontalStretch(1)  # Allow the widget to grow horizontally
+        tab_widget.setSizePolicy(size_policy)
+
+        # Set minimum and maximum sizes based on the length of the file name
+        min_width = 100  # Set a minimum width to ensure readability
+        max_width = 300  # Set a maximum width to avoid excessive stretching
+        tab_widget.setMinimumWidth(min_width)
+        tab_widget.setMaximumWidth(max_width)
+
+        self.tab_widget.setCurrentIndex(index)
+
+
+
+        # File-related variables
+        self.current_file = ''
+
+    def add_welcome_tab(self):
         # Create a new tab with an editor
         editor = QsciScintilla(self)
         lexer = QsciLexerPython(self)
@@ -204,16 +344,10 @@ class PythonIDE(QMainWindow):
         editor.SendScintilla(QsciScintilla.SCI_SETUNDOCOLLECTION, 1)
 
         # Add the editor to the tab widget
-        index = self.tab_widget.addTab(editor, 'Untitled')
-
-        close_button = QToolButton()
-        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
-        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+        index = self.tab_widget.addTab(editor, 'Welcome')
 
         # Set up a layout for the tab title and close button
         tab_layout = QHBoxLayout()
-        tab_layout.addWidget(QLabel('Filename'))  # Replace 'Untitled' with the actual filename
-        tab_layout.addStretch(1)  # Add a stretchable space to push the close button to the right
 
         # Create a minimal close button
         close_button = QToolButton()
@@ -221,15 +355,88 @@ class PythonIDE(QMainWindow):
         close_button.setStyleSheet("QToolButton { border: none; padding: 0; margin: 0; max-height: 10px; }")
         close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
 
+        tab_layout.addWidget(QLabel('Welcome'))
+        tab_layout.addStretch(1)  # Add a stretchable space to push the close button to the right
         tab_layout.addWidget(close_button)
-        tab_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins to make it a rectangle
+        tab_layout.setContentsMargins(0, 0, 5, 0)  # Remove margins to make it a rectangle
         tab_layout.setSpacing(4)  # Adjust spacing as needed
+
         # Set the custom layout for the tab
         tab_widget = QWidget()
         tab_widget.setLayout(tab_layout)
         self.tab_widget.setTabText(index, '')
-        self.tab_widget.setTabToolTip(index, 'Untitled')
-        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)  # Corrected line
+        self.tab_widget.setTabToolTip(index, 'Welcome')
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)
+
+        # Make the tab resizable based on the length of the file name
+        size_policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        size_policy.setHorizontalStretch(1)  # Allow the widget to grow horizontally
+        tab_widget.setSizePolicy(size_policy)
+
+        # Set minimum and maximum sizes based on the length of the file name
+        min_width = 100  # Set a minimum width to ensure readability
+        max_width = 300  # Set a maximum width to avoid excessive stretching
+        tab_widget.setMinimumWidth(min_width)
+        tab_widget.setMaximumWidth(max_width)
+
+        self.tab_widget.setCurrentIndex(index)
+
+    def add_welcome_tab(self):
+        # Create a new tab with an editor
+        editor = QsciScintilla(self)
+        lexer = QsciLexerPython(self)
+        editor.setLexer(lexer)
+
+        # Set up line numbers
+        font = QFont()
+        font.setFamily('Menlo')  # Use a monospaced font
+        font.setPointSize(12)
+        editor.setMarginsFont(font)
+        editor.setMarginWidth(0, '0000')
+        editor.setMarginLineNumbers(0, True)
+
+        # Enable undo functionality using QsciCommand
+        editor.SendScintilla(QsciScintilla.SCI_SETUNDOCOLLECTION, 1)
+
+        # Add a welcome message to the editor
+        welcome_message = "print('Welcome to the sawa IDE!')"
+        editor.setText(welcome_message)
+
+        # Add the editor to the tab widget
+        index = self.tab_widget.addTab(editor, 'Welcome')
+
+        # Set up a layout for the tab title and close button
+        tab_layout = QHBoxLayout()
+
+        # Create a minimal close button
+        close_button = QToolButton()
+        close_button.setIcon(icon('fa5s.times'))  # Use Font Awesome icon for close
+        close_button.setStyleSheet("QToolButton { border: none; padding: 0; margin: 0; max-height: 10px; }")
+        close_button.clicked.connect(lambda _, i=index: self.close_tab(i))
+
+        tab_layout.addWidget(QLabel('Welcome'))
+        tab_layout.addStretch(1)  # Add a stretchable space to push the close button to the right
+        tab_layout.addWidget(close_button)
+        tab_layout.setContentsMargins(0, 0, 5, 0)  # Remove margins to make it a rectangle
+        tab_layout.setSpacing(4)  # Adjust spacing as needed
+
+        # Set the custom layout for the tab
+        tab_widget = QWidget()
+        tab_widget.setLayout(tab_layout)
+        self.tab_widget.setTabText(index, '')
+        self.tab_widget.setTabToolTip(index, 'Welcome')
+        self.tab_widget.tabBar().setTabButton(index, QTabBar.RightSide, tab_widget)
+
+        # Make the tab resizable based on the length of the file name
+        size_policy = QSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        size_policy.setHorizontalStretch(1)  # Allow the widget to grow horizontally
+        tab_widget.setSizePolicy(size_policy)
+
+        # Set minimum and maximum sizes based on the length of the file name
+        min_width = 100  # Set a minimum width to ensure readability
+        max_width = 300  # Set a maximum width to avoid excessive stretching
+        tab_widget.setMinimumWidth(min_width)
+        tab_widget.setMaximumWidth(max_width)
 
         self.tab_widget.setCurrentIndex(index)
 
@@ -391,6 +598,9 @@ class PythonIDE(QMainWindow):
             QMessageBox.information(self, 'File Saved', f'File saved successfully: {self.current_file}')
 
     def run_code(self):
+        # Clear the console before running the code again
+        self.console_widget.clear()
+
         # Get the active tab's editor
         current_editor = self.tab_widget.currentWidget()
 
@@ -418,13 +628,13 @@ class PythonIDE(QMainWindow):
                 # Display the output in the interactive console
                 self.console_widget.append(output)
 
-                # Display errors in a separate dialog if there are any
+                # Display errors in the console
                 if error_output:
-                    self.show_error_dialog(error_output)
+                    self.console_widget.append(f"Error: {error_output}")
 
             except Exception as e:
-                # Display the exception message in a separate dialog
-                self.show_error_dialog(str(e))
+                # Display the exception message in the console
+                self.console_widget.append(f"Exception: {str(e)}")
 
             finally:
                 # Restore the original standard output and error
@@ -433,16 +643,122 @@ class PythonIDE(QMainWindow):
 
             self.update_status('Code executed')
 
+    def execute_code(self, code_to_run, clear_console=True):
+        """
+        Execute the given code and handle output/errors.
+        """
+        local_vars = {}
+
+        # Optionally clear the console before running the code
+        if clear_console:
+            self.console_widget.clear()
+
+        # Create StringIO objects to capture standard output and error
+        captured_output = StringIO()
+        captured_error = StringIO()
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+
+        try:
+            # Redirect standard output and error to the StringIO objects
+            sys.stdout = captured_output
+            sys.stderr = captured_error
+
+            # Syntax checking
+            syntax_errors = pyflakes.api.check(code_to_run, filename='<string>')
+            if syntax_errors:
+                self.console_widget.append("Syntax Error:")
+                for error in syntax_errors:
+                    formatted_error = traceback.format_exception_only(SyntaxError, error)
+                    self.console_widget.extend(formatted_error)
+                return
+
+            # Code profiling
+            profiler = cProfile.Profile()
+            profiler.enable()
+
+            # Execute the code
+            exec(code_to_run, globals(), local_vars)
+
+            # Stop profiling
+            profiler.disable()
+            profiler_output = StringIO()
+            profiler.print_stats(stream=profiler_output)
+
+            # Retrieve the captured output and error
+            output = captured_output.getvalue()
+            error_output = captured_error.getvalue()
+
+            # Display the output in the interactive console
+            self.console_widget.append(output)
+
+            # Display errors in the console
+            if error_output:
+                self.console_widget.append(f"Error: {error_output}")
+
+            # Display profiling information
+            profiler_output_str = profiler_output.getvalue()
+            if profiler_output_str:
+                self.console_widget.append("Profiling Information:")
+                self.console_widget.append(profiler_output_str)
+
+        except Exception as e:
+            # Display the exception message in the console
+            self.console_widget.append(f"Exception: {str(e)}")
+
+        finally:
+            # Restore the original standard output and error
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+        self.update_status('Code executed')
+        
+    def execute_code(self, code_to_run):
+        """
+        Execute the given code and handle output/errors.
+        """
+        local_vars = {}
+
+        # Create StringIO objects to capture standard output and error
+        captured_output = StringIO()
+        captured_error = StringIO()
+        original_stdout = sys.stdout
+        original_stderr = sys.stderr
+
+        try:
+            # Redirect standard output and error to the StringIO objects
+            sys.stdout = captured_output
+            sys.stderr = captured_error
+
+            # Execute the code
+            exec(code_to_run, globals(), local_vars)
+
+            # Retrieve the captured output and error
+            output = captured_output.getvalue()
+            error_output = captured_error.getvalue()
+
+            # Display the output in the interactive console
+            self.console_widget.append(output)
+
+            # Display errors in the console
+            if error_output:
+                self.console_widget.append(f"Error: {error_output}")
+
+        except Exception as e:
+            # Display the exception message in the console
+            self.console_widget.append(f"Exception: {str(e)}")
+
+        finally:
+            # Restore the original standard output and error
+            sys.stdout = original_stdout
+            sys.stderr = original_stderr
+
+        self.update_status('Code executed')
+
     def update_status(self, message):
         self.status_label.setText(message)
 
-    def show_error_dialog(self, error_message):
-        error_dialog = QMessageBox(self)
-        error_dialog.setIcon(QMessageBox.Critical)
-        error_dialog.setWindowTitle('Code Execution Error')
-        error_dialog.setText('An error occurred during code execution:')
-        error_dialog.setDetailedText(error_message)
-        error_dialog.exec_()
+
 
     def close_tab(self, index):
         # Check if there are unsaved changes in the current tab
