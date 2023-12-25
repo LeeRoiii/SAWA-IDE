@@ -114,7 +114,7 @@ class PythonIDE(QMainWindow):
         self.add_welcome_tab()
 
         # Console Dock
-        self.console_dock = QDockWidget('Interactive Console', self)
+        self.console_dock = QDockWidget('Debug Console', self)
         self.console_widget = QTextBrowser()
         self.console_dock.setWidget(self.console_widget)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.console_dock)
@@ -159,27 +159,12 @@ class PythonIDE(QMainWindow):
                                                  self.save_project, 'save')
         project_menu.addActions([new_project_action, open_project_action, save_project_action])
 
-        # Toolbar
-        toolbar = QToolBar('Main Toolbar', self)
-        toolbar_icon_size = 20
-        toolbar.addActions([new_action, open_action, save_action, run_code_action])
-
-        # Change the color of the icons
-        for action in toolbar.actions():
-            icon_name = action.property('icon_name')
-            action.setIcon(icon(f'fa5s.{icon_name}', color=icon_color, color_active='#87CEFA', scale_factor=1.5))
-
-        self.addToolBar(toolbar)
 
         # Status Bar
         status_bar = self.statusBar()
         self.status_label = QLabel('Ready', self)
         status_bar.addWidget(self.status_label)
 
-        # Create a button to open a new window
-        open_new_window_button = QPushButton('Open New Window', self)
-        open_new_window_button.clicked.connect(self.open_new_window)
-        toolbar.addWidget(open_new_window_button)
 
         # Example implementation of a retractable sidebar
         self.sidebar = QDockWidget('File Viewer', self)
